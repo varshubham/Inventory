@@ -1,11 +1,12 @@
 const express = require('express')
 const User = require('../models/Users')
-
+const EmailToken = require('../models/Emailtoken')
 const router = express.Router();
 const { body, validationResult } = require('express-validator');
 const bcrypt = require('bcryptjs')
 const jwt = require('jsonwebtoken')
 const fetchuser = require('../middleware/fetchuser')
+const nodemailer = require('nodemailer');
 
 
 const SECRET_KEY = "thisisasecretkey"
@@ -118,7 +119,7 @@ router.post('/getuser', fetchuser, async (req, res) => {
 
 // route 4 : edit user details
 
-router.put('/update', fetchuser, async (req, res) => {
+router.put('/edit', fetchuser, async (req, res) => {
     try {
 
         const { name, email } = req.body;
@@ -127,17 +128,104 @@ router.put('/update', fetchuser, async (req, res) => {
         if (email) { newuser.email = email }
 
         let user = await User.findById(req.user.id)
-        if(!user){
+        if (!user) {
             return res.status(404).send("Not found")
         }
-        else{
-            users = await User.findByIdAndUpdate(req.user.id,{$set:newuser},{new:true})
-            res.json({users})
+        else {
+            users = await User.findByIdAndUpdate(req.user.id, { $set: newuser }, { new: true })
+            res.json({ users })
         }
-        
+
 
     } catch (error) {
         res.status(500).send("Internal Server error")
+    }
+})
+
+// route 5 : change password
+router.put('/changepass', fetchuser, async (req, res) => {
+    try {
+        let user = await User.findById(req.user.id)
+        if (!user) {
+            return res.status(404).send("not found")
+        }
+        else {
+            const {password} = req.body;
+            const userpp = await User.findById(req.user.id).select("password");
+            const comparrr = await bcrypt.compare(password, userpp.password);
+            if (comparrr) {
+                return res.status(400).json({ error: "please set new password" })
+            }
+           
+                const salt = await bcrypt.genSalt(10);
+                const secPass = await bcrypt.hash(req.body.password, salt)
+
+                const user = await User.findByIdAndUpdate(req.user.id, { password: secPass}, { new: true })
+                res.json(user)
+
+           
+        }
+    } catch (error) {
+        console.log(error.message)
+        res.status(500).send("Internal Server error")
+    }
+})
+
+
+// route 6 : email verification
+router.post('/email-verification',fetchuser,async (req,res)=>{
+    try{
+        let user = await EmailToken.findOne({user:req.user.id})
+        if(user){
+            return res.status(400).json({ error: "token is already set" })
+        }
+        else
+        {
+            var token = Math.floor(1000 + Math.random() * 9000)
+
+            var transport = nodemailer.createTransport(
+                {
+                    service : 'gmail',
+                    secure:false,
+                    auth : {
+                        user : 'varshneyyaman766@gmail.com',
+                        pass:'lzeuyztcfbaulmla'
+                    },
+                    tls:{
+                        rejectUnauthorized:false
+                    }
+                }
+            );
+            
+            
+            var mailOptions = {
+                from : 'varshneyyaman766@gmail.com',
+                to : `${req.body.email}`,
+                subject : 'Verification of Email',
+                text : `Your OTP is ${token}`
+            }
+            
+            transport.sendMail(mailOptions,function(error,info){
+                if(error){
+                    console.log(error)
+                }else{
+                    console.log("Email sent")
+                }
+            })
+
+            if(token){
+                const verified = new EmailToken({
+                    emailToken:token,user:req.user.id
+                })
+                const savedtoken = await verified.save();
+        
+                res.json(savedtoken)
+            }
+            
+        }
+        
+    }catch(error){
+        res.status(500).send("Internal server error")
     }
 })
 
